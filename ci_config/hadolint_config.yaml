@@ -1,0 +1,19 @@
+# COPYRIGHT Ericsson 2022
+#
+#
+# The copyright to the computer program(s) herein is the property of
+# Ericsson Inc. The programs may be used and/or copied only with written
+# permission from Ericsson Inc. or in accordance with the terms and
+# conditions stipulated in the agreement/contract under which the
+# program(s) have been supplied.
+
+no-fail: true
+no-color: false
+format: json
+failure-threshold: error
+
+trustedRegistries:
+  - "armdocker.rnd.ericsson.se"
+
+ignored:
+  - DL3026 # Use only an allowed registry in the FROM image :: False failure due to use of ARG

@@ -1,0 +1,641 @@
+# ********************************************************************
+# (c) Ericsson LMI 2020 - All rights reserved.
+#
+# The copyright to the computer program(s) herein is the property of
+# Ericsson LMI. The programs may be used and/or copied only  with the
+# written permission from Ericsson LMI or in accordance with the terms
+# and conditions stipulated in the agreement/contract under which the
+# program(s) have been supplied.
+#
+# ********************************************************************
+# Name    : ruleset2.0.yaml
+# Purpose : The purpose of this file is to provide tasks that can be run
+#           by the Bob execution engine, version 2.0.
+#           For more information, see:
+#           https://gerrit-gamma.gic.ericsson.se/plugins/gitiles/adp-cicd/bob/+/HEAD/USER_GUIDE_2.0.md
+# Usage   : "bob <rule-name>"
+#            - carries out the commands described under the rule
+# ********************************************************************
+modelVersion: 2.0
+
+description: "ENM: Models Pipeline"
+
+docker:
+  registry: https://armdocker.rnd.ericsson.se/proj-enm
+
+docker-images:
+  - adp-release-auto: armdocker.rnd.ericsson.se/proj-adp-cicd-drop/bob-adp-release-auto:latest
+  - eric-enm-version-auto: armdocker.rnd.ericsson.se/proj-enm/eric-enm-version-auto:1.1.1
+  - python3-builder: armdocker.rnd.ericsson.se/proj-adp-cicd-drop/bob-python3builder:2.7.0
+  - alpine: armdocker.rnd.ericsson.se/dockerhub-ericsson-remote/alpine:3.15.4
+  - va-scan-kubeaudit: armdocker.rnd.ericsson.se/proj-adp-cicd-drop/va-scan-kubeaudit:${kubeaudit-version}
+  - va-scan-kubesec: armdocker.rnd.ericsson.se/proj-adp-cicd-drop/va-scan-kubesec:${kubesec-version}
+  - trivy-inline-scan: armdocker.rnd.ericsson.se/proj-adp-cicd-drop/trivy-inline-scan:${trivy-version}
+  - grype-scan: armdocker.rnd.ericsson.se/proj-adp-cicd-drop/va-image-scanning-grype:${grype-version}
+  - hadolint-scan: armdocker.rnd.ericsson.se/proj-adp-cicd-drop/hadolint-scan:${hadolint-version}
+
+properties:
+  - release-image-repo: armdocker.rnd.ericsson.se/proj-enm
+  - release-image-repo-url: https://${release-image-repo}
+  - internal-image-repo: armdocker.rnd.ericsson.se/proj_oss_releases/enm
+
+  - models-core-dockerfile-path: ./docker/Dockerfile-Core
+  - models-base-dockerfile-path: ./docker/Dockerfile-Models-Base
+  - models-generic-dockerfile-path: ./docker/oss_model_images/Dockerfile-Models-Generic
+
+  - core-models-image-name: eric-enm-models-core-image
+  - base-models-image-name: eric-enm-models-base-image
+  - service-models-name: eric-enm-models-service
+  - nrm-models-name: eric-enm-models-nrm
+  - post-install-models-name: eric-enm-models-post-install
+
+  - docker-core-models-image-path: ${release-image-repo}/${core-models-image-name}
+  - docker-base-models-image-path: ${release-image-repo}/${base-models-image-name}
+  - docker-service-models-image-path: ${release-image-repo}/${service-models-name}
+  - docker-nrm-models-image-path: ${release-image-repo}/${nrm-models-name}
+  - docker-post-install-models-image-path: ${release-image-repo}/${post-install-models-name}
+
+
+  - docker-internal-core-models-image-path: ${internal-image-repo}/${core-models-image-name}
+  - docker-internal-base-models-image-path: ${internal-image-repo}/${base-models-image-name}
+  - docker-internal-service-models-image-path: ${internal-image-repo}/${service-models-name}
+  - docker-internal-nrm-models-image-path: ${internal-image-repo}/${nrm-models-name}
+  - docker-internal-post-install-models-image-path: ${internal-image-repo}/${post-install-models-name}
+
+  - models-core-image-cxc: "\"CXC_Placeholder\""
+  - models-base-image-cxc: "\"CXC 174 3271\""
+  - models-service-image-cxc: "\"CXU_Placeholder\""
+  - models-nrm-image-cxc: "\"CXU_Placeholder\""
+  - models-post-install-image-cxc: "\"CXC 174 3056\""
+
+  - kubeaudit-version: 0.2.0-21
+  - kubesec-version: 0.2.0-21
+  - trivy-version: 20220926
+  - grype-version: 1.4.0
+  - hadolint-version: 0.2.0-13
+  - image-path-to-scan: ${internal-image-repo}
+  - image-version-to-scan: latest
+  - build-dir: build
+
+env:
+  - RELEASE (default=false)
+  - ISO_VERSION (default=1.99.19)
+  - BUILD_DATE (default = $(date +%d%m%Y-%H%M%S --utc))
+  - AUTHOR_NAME
+  - AUTHOR_EMAIL
+  - GIT_COMMITTER_NAME
+  - GIT_COMMITTER_EMAIL
+  - PWD
+
+var:
+  - commit-hash
+  - version
+  - version-prefix
+  - rstate
+
+rules:
+
+  # Aggregate Rule
+  local-run:
+    - rule: clean
+    - rule: lint-scripting
+    - rule: test-scripting
+    - rule: lint-dockerfile
+    - rule: build-local-image
+    - rule: run-local-docker-container
+    - rule: local-clean
+
+  #Python Rules
+  lint-scripting:
+    - task: lint-scripting
+      docker-image: python3-builder
+      docker-flags:
+        - "--env PYTHONPATH=src:tests"
+      cmd: pylint src/ --fail-under 9 | tee -a ./scriptinglint.log
+
+  test-scripting:
+    - task: test-scripting
+      docker-image: python3-builder
+      docker-flags:
+        - "--env PYTHONPATH=src:tests:pkg"
+        - "--env TMPDIR=tmp-pkg"
+        - "--user $(id -u):$(id -g)"
+      cmd:
+        - mkdir -p pkg tmp-pkg
+        - sh -c "pip install --target=pkg -r tests/requirements.txt && pytest"
+
+  # Common Rules
+  clean:
+    - task: clean
+      description: clean bob, docker, python & va-scan related artifacts
+      docker-image: alpine
+      docker-flags:
+        - "--user $(id -u):$(id -g)"
+      cmd:
+        - rm -rf .bob/
+        - rm -f dockerfilelint.log scriptinglint.log
+        - rm -rf pkg tmp-pkg .pytest_cache/ htmlcov/ .coverage tests/.coverage $(find . -type d -regex ".*__pycache__.*")
+        - rm -rf ${build-dir}
+
+  lint-dockerfile:
+    - task: lint-dockerfile
+      cmd:
+        - docker container run --rm -i hadolint/hadolint < ${models-core-dockerfile-path} | tee -a ./dockerfilelint.log
+        - docker container run --rm -i hadolint/hadolint < ${models-base-dockerfile-path} | tee -a ./dockerfilelint.log
+        - docker container run --rm -i hadolint/hadolint < ${models-generic-dockerfile-path} | tee -a ./dockerfilelint.log
+
+  # Local Rules
+  build-local-image:
+    - task: build-local-image
+      cmd:
+        - docker image build . --file=${models-core-dockerfile-path} --label "version=local"
+          --tag ${docker-core-models-image-path}:local
+        - docker image build . --file=${models-base-dockerfile-path} --label "version=local"
+          --build-arg LATEST_ERIC_ENM_MODELS_CORE_IMAGE_TAG=local
+          --tag ${docker-base-models-image-path}:local
+        - docker image build . --file=${models-generic-dockerfile-path} --label "version=local"
+          --build-arg LATEST_ERIC_ENM_MODELS_IMAGE_TAG=local --build-arg models_type=service_models
+          --build-arg models_dir=install --build-arg model_deploy_file=docker/oss_model_images/services.json
+          --tag ${docker-service-models-image-path}:local
+        - docker image build . --file=${models-generic-dockerfile-path} --label "version=local"
+          --build-arg LATEST_ERIC_ENM_MODELS_IMAGE_TAG=local
+          --build-arg models_dir=install --build-arg models_type=nrm_models
+          --build-arg model_deploy_file=docker/oss_model_images/nrms.json
+          --tag ${docker-nrm-models-image-path}:local
+        - docker image build . --file=${models-generic-dockerfile-path} --label "version=local"
+          --build-arg LATEST_ERIC_ENM_MODELS_IMAGE_TAG=local
+          --build-arg models_dir=post_install --build-arg models_type=post_install
+          --build-arg model_deploy_file=docker/oss_model_images/post-install.json
+          --tag ${docker-post-install-models-image-path}:local
+
+  run-local-docker-container:
+    - task: run-local-docker-container
+      cmd:
+        - docker container run --detach ${docker-service-models-image-path}:local
+        - docker container run --detach ${docker-nrm-models-image-path}:local
+        - docker container run --detach ${docker-post-install-models-image-path}:local
+
+  local-clean:
+    - task: local-clean
+      cmd:
+        - echo "Removing the following containers:";
+          docker container list --all --filter "label=version=local";
+        - docker container list --all --quiet --filter "label=version=local" |
+            xargs -I % sh -c '[ ! -z "%" ] && docker container rm -f %'
+
+
+  # Common Pipeline Rules
+  generate-new-version:
+    - task: generate-version
+      docker-image: adp-release-auto
+      cmd: generate-version -f VERSION_PREFIX --is-release ${env.RELEASE} --output version
+    - task: set-version-prefix
+      cmd: cat VERSION_PREFIX > .bob/var.version-prefix
+    - task: generate-rstate
+      docker-image: adp-release-auto
+      cmd: get_rstate.py ${var.version} > .bob/var.rstate
+    - task: get-commit-hash
+      docker-image: adp-release-auto
+      cmd: git rev-parse HEAD > .bob/var.commit-hash
+
+  # Pre-Code Review Pipeline Rules
+  build-image-with-all-tags-internal:
+    - task: build-image-with-all-tags-internal
+      cmd:
+        # Build Models Core image
+        - docker image build . --file=${models-core-dockerfile-path}
+          --build-arg GIT_COMMIT=${var.commit-hash} --build-arg BUILD_DATE=${env.BUILD_DATE}
+          --build-arg IMAGE_BUILD_VERSION=${var.version} --build-arg RSTATE=${var.rstate}
+          --build-arg ISO_VERSION=${env.ISO_VERSION} --build-arg CXC=${models-core-image-cxc}
+          --tag ${docker-internal-core-models-image-path}:${var.version}
+        - docker image tag ${docker-internal-core-models-image-path}:${var.version} ${docker-internal-core-models-image-path}:${var.version-prefix}-latest
+        - docker image tag ${docker-internal-core-models-image-path}:${var.version} ${docker-internal-core-models-image-path}:latest
+        # Build Models Base image
+        - docker image build . --file=${models-base-dockerfile-path}
+          --build-arg ERIC_ENM_MODELS_CORE_IMAGE_REPO=${internal-image-repo}
+          --build-arg GIT_COMMIT=${var.commit-hash} --build-arg BUILD_DATE=${env.BUILD_DATE}
+          --build-arg IMAGE_BUILD_VERSION=${var.version} --build-arg RSTATE=${var.rstate}
+          --build-arg ISO_VERSION=${env.ISO_VERSION} --build-arg CXC=${models-base-image-cxc}
+          --tag ${docker-internal-base-models-image-path}:${var.version}
+        - docker image tag ${docker-internal-base-models-image-path}:${var.version} ${docker-internal-base-models-image-path}:${var.version-prefix}-latest
+        - docker image tag ${docker-internal-base-models-image-path}:${var.version} ${docker-internal-base-models-image-path}:latest
+        # Build Services Models Image
+        - docker image build . --file=${models-generic-dockerfile-path}
+          --build-arg ERIC_ENM_MODELS_IMAGE_REPO=${internal-image-repo}
+          --build-arg models_type=service_models --build-arg models_dir=install
+          --build-arg model_deploy_file=docker/oss_model_images/services.json
+          --build-arg GIT_COMMIT=${var.commit-hash} --build-arg BUILD_DATE=${env.BUILD_DATE}
+          --build-arg IMAGE_BUILD_VERSION=${var.version} --build-arg RSTATE=${var.rstate}
+          --build-arg ISO_VERSION=${env.ISO_VERSION} --build-arg CXC=${models-service-image-cxc}
+          --tag ${docker-internal-service-models-image-path}:${var.version}
+        - docker image tag ${docker-internal-service-models-image-path}:${var.version} ${docker-internal-service-models-image-path}:${var.version-prefix}-latest
+        - docker image tag ${docker-internal-service-models-image-path}:${var.version} ${docker-internal-service-models-image-path}:latest
+        # Build NRM Models Image
+        - docker image build . --file=${models-generic-dockerfile-path}
+          --build-arg ERIC_ENM_MODELS_IMAGE_REPO=${internal-image-repo}
+          --build-arg models_type=nrm_models --build-arg models_dir=install
+          --build-arg model_deploy_file=docker/oss_model_images/nrms.json
+          --build-arg GIT_COMMIT=${var.commit-hash} --build-arg BUILD_DATE=${env.BUILD_DATE}
+          --build-arg IMAGE_BUILD_VERSION=${var.version} --build-arg RSTATE=${var.rstate}
+          --build-arg ISO_VERSION=${env.ISO_VERSION} --build-arg CXC=${models-nrm-image-cxc}
+          --tag ${docker-internal-nrm-models-image-path}:${var.version}
+        - docker image tag ${docker-internal-nrm-models-image-path}:${var.version} ${docker-internal-nrm-models-image-path}:${var.version-prefix}-latest
+        - docker image tag ${docker-internal-nrm-models-image-path}:${var.version} ${docker-internal-nrm-models-image-path}:latest
+        # Build Post-Install Models Image
+        - docker image build . --file=${models-generic-dockerfile-path}
+          --build-arg ERIC_ENM_MODELS_IMAGE_REPO=${internal-image-repo}
+          --build-arg models_type=post_install --build-arg models_dir=post_install
+          --build-arg model_deploy_file=docker/oss_model_images/post-install.json
+          --build-arg GIT_COMMIT=${var.commit-hash} --build-arg BUILD_DATE=${env.BUILD_DATE}
+          --build-arg IMAGE_BUILD_VERSION=${var.version} --build-arg RSTATE=${var.rstate}
+          --build-arg ISO_VERSION=${env.ISO_VERSION} --build-arg CXC=${models-post-install-image-cxc}
+          --tag ${docker-internal-post-install-models-image-path}:${var.version}
+        - docker image tag ${docker-internal-post-install-models-image-path}:${var.version} ${docker-internal-post-install-models-image-path}:${var.version-prefix}-latest
+        - docker image tag ${docker-internal-post-install-models-image-path}:${var.version} ${docker-internal-post-install-models-image-path}:latest
+
+  remove-image-with-all-tags-internal:
+    - task: remove-image-with-all-tags-internal
+      cmd:
+        # Remove Core Models Image with All Tags Internal
+        - docker image remove ${docker-internal-core-models-image-path}:${var.version}
+        - docker image remove ${docker-internal-core-models-image-path}:${var.version-prefix}-latest
+        - docker image remove ${docker-internal-core-models-image-path}:latest
+        # Remove Base Models Image with All Tags Internal
+        - docker image remove ${docker-internal-base-models-image-path}:${var.version}
+        - docker image remove ${docker-internal-base-models-image-path}:${var.version-prefix}-latest
+        - docker image remove ${docker-internal-base-models-image-path}:latest
+        # Remove Services Models Image with All Tags Internal
+        - docker image remove ${docker-internal-service-models-image-path}:${var.version}
+        - docker image remove ${docker-internal-service-models-image-path}:${var.version-prefix}-latest
+        - docker image remove ${docker-internal-service-models-image-path}:latest
+        # Remove NRM Models Image with All Tags Internal
+        - docker image remove ${docker-internal-nrm-models-image-path}:${var.version}
+        - docker image remove ${docker-internal-nrm-models-image-path}:${var.version-prefix}-latest
+        - docker image remove ${docker-internal-nrm-models-image-path}:latest
+        # Remove Post-Install Models Image with All Tags Internal
+        - docker image remove ${docker-internal-post-install-models-image-path}:${var.version}
+        - docker image remove ${docker-internal-post-install-models-image-path}:${var.version-prefix}-latest
+        - docker image remove ${docker-internal-post-install-models-image-path}:latest
+
+  push-image-with-all-tags-internal:
+    - task: push-image-with-all-tags-internal
+      cmd:
+        # Push Core Models Image with All Tags Internal
+        - docker image push ${docker-internal-core-models-image-path}:${var.version}
+        - docker image push ${docker-internal-core-models-image-path}:${var.version-prefix}-latest
+        - docker image push ${docker-internal-core-models-image-path}:latest
+        # Push Base Models Image with All Tags Internal
+        - docker image push ${docker-internal-base-models-image-path}:${var.version}
+        - docker image push ${docker-internal-base-models-image-path}:${var.version-prefix}-latest
+        - docker image push ${docker-internal-base-models-image-path}:latest
+        # Push Service Models Image with All Tags Internal
+        - docker image push ${docker-internal-service-models-image-path}:${var.version}
+        - docker image push ${docker-internal-service-models-image-path}:${var.version-prefix}-latest
+        - docker image push ${docker-internal-service-models-image-path}:latest
+        # Push NRM Models Image with All Tags Internal
+        - docker image push ${docker-internal-nrm-models-image-path}:${var.version}
+        - docker image push ${docker-internal-nrm-models-image-path}:${var.version-prefix}-latest
+        - docker image push ${docker-internal-nrm-models-image-path}:latest
+        # Push Post-Install Models Image with All Tags Internal
+        - docker image push ${docker-internal-post-install-models-image-path}:${var.version}
+        - docker image push ${docker-internal-post-install-models-image-path}:${var.version-prefix}-latest
+        - docker image push ${docker-internal-post-install-models-image-path}:latest
+
+  generate-output-parameters-internal:
+    - task: generate-output-parameters-internal
+      docker-image: adp-release-auto
+      cmd:
+        # Generate Output Parameters Core
+        - generate-adp-artifacts
+          --image-only true
+          --image-repo ${docker-internal-core-models-image-path}
+          --image-name ${core-models-image-name} --image-version ${var.version}
+        # Generate Output Parameters Base
+        - generate-adp-artifacts
+          --image-only true
+          --image-repo ${docker-internal-base-models-image-path}
+          --image-name ${base-models-image-name} --image-version ${var.version}
+        # Generate Output Parameters Service Models
+        - generate-adp-artifacts
+          --image-only true
+          --image-repo ${docker-internal-service-models-image-path}
+          --image-name ${service-models-name} --image-version ${var.version}
+        # Generate Output Parameters NRM Models
+        - generate-adp-artifacts
+          --image-only true
+          --image-repo ${docker-internal-nrm-models-image-path}
+          --image-name ${nrm-models-name} --image-version ${var.version}
+        # Generate Output Parameters Post-Install
+        - generate-adp-artifacts
+          --image-only true
+          --image-repo ${docker-internal-post-install-models-image-path}
+          --image-name ${post-install-models-name} --image-version ${var.version}
+
+  # Release Pipeline Rules
+  swap-latest-versions-with-numbers:
+    - task: swap-latest-versions-with-numbers
+      docker-image: eric-enm-version-auto
+      docker-flags:
+        - "--env-file enm_artifact.properties"
+      cmd: python /substitute_values.py
+
+  build-image-with-all-tags:
+    - task: build-image-with-all-tags
+      cmd:
+        # Build Core Models Image
+        - docker image build . --file=${models-core-dockerfile-path}
+          --build-arg GIT_COMMIT=${var.commit-hash}
+          --build-arg BUILD_DATE=${env.BUILD_DATE} --build-arg IMAGE_BUILD_VERSION=${var.version}
+          --build-arg RSTATE=${var.rstate} --build-arg ISO_VERSION=${env.ISO_VERSION}
+          --build-arg CXC=${models-core-image-cxc} --tag ${docker-core-models-image-path}:${var.version}
+        - docker image tag ${docker-core-models-image-path}:${var.version} ${docker-core-models-image-path}:${var.version-prefix}-latest
+        - docker image tag ${docker-core-models-image-path}:${var.version} ${docker-core-models-image-path}:latest
+        # Build Base Models Image
+        - docker image build . --file=${models-base-dockerfile-path}
+          --build-arg GIT_COMMIT=${var.commit-hash}
+          --build-arg BUILD_DATE=${env.BUILD_DATE} --build-arg IMAGE_BUILD_VERSION=${var.version}
+          --build-arg RSTATE=${var.rstate} --build-arg ISO_VERSION=${env.ISO_VERSION}
+          --build-arg CXC=${models-base-image-cxc} --tag ${docker-base-models-image-path}:${var.version}
+        - docker image tag ${docker-base-models-image-path}:${var.version} ${docker-base-models-image-path}:${var.version-prefix}-latest
+        - docker image tag ${docker-base-models-image-path}:${var.version} ${docker-base-models-image-path}:latest
+        # Build Services Models Image
+        - docker image build . --file=${models-generic-dockerfile-path}
+          --build-arg models_type=service_models --build-arg models_dir=install
+          --build-arg model_deploy_file=docker/oss_model_images/services.json
+          --build-arg GIT_COMMIT=${var.commit-hash}
+          --build-arg BUILD_DATE=${env.BUILD_DATE} --build-arg IMAGE_BUILD_VERSION=${var.version}
+          --build-arg RSTATE=${var.rstate} --build-arg ISO_VERSION=${env.ISO_VERSION}
+          --build-arg CXC=${models-service-image-cxc} --tag ${docker-service-models-image-path}:${var.version}
+        - docker image tag ${docker-service-models-image-path}:${var.version} ${docker-service-models-image-path}:${var.version-prefix}-latest
+        - docker image tag ${docker-service-models-image-path}:${var.version} ${docker-service-models-image-path}:latest
+        # Build NRM Models Image
+        - docker image build . --file=${models-generic-dockerfile-path}
+          --build-arg models_type=nrm_models --build-arg models_dir=install
+          --build-arg model_deploy_file=docker/oss_model_images/nrms.json
+          --build-arg GIT_COMMIT=${var.commit-hash}
+          --build-arg BUILD_DATE=${env.BUILD_DATE} --build-arg IMAGE_BUILD_VERSION=${var.version}
+          --build-arg RSTATE=${var.rstate} --build-arg ISO_VERSION=${env.ISO_VERSION}
+          --build-arg CXC=${models-nrm-image-cxc} --tag ${docker-nrm-models-image-path}:${var.version}
+        - docker image tag ${docker-nrm-models-image-path}:${var.version} ${docker-nrm-models-image-path}:${var.version-prefix}-latest
+        - docker image tag ${docker-nrm-models-image-path}:${var.version} ${docker-nrm-models-image-path}:latest
+        # Build Post-Install Models Image
+        - docker image build . --file=${models-generic-dockerfile-path}
+          --build-arg models_type=post_install --build-arg models_dir=post_install
+          --build-arg model_deploy_file=docker/oss_model_images/post-install.json
+          --build-arg GIT_COMMIT=${var.commit-hash}
+          --build-arg BUILD_DATE=${env.BUILD_DATE} --build-arg IMAGE_BUILD_VERSION=${var.version}
+          --build-arg RSTATE=${var.rstate} --build-arg ISO_VERSION=${env.ISO_VERSION}
+          --build-arg CXC=${models-post-install-image-cxc} --tag ${docker-post-install-models-image-path}:${var.version}
+        - docker image tag ${docker-post-install-models-image-path}:${var.version} ${docker-post-install-models-image-path}:${var.version-prefix}-latest
+        - docker image tag ${docker-post-install-models-image-path}:${var.version} ${docker-post-install-models-image-path}:latest
+
+  print-docker-info:
+    - task: print useful docker information
+      cmd:
+        - docker system df
+        - docker image ls
+        - docker info
+        - df -h
+        - du -a / | sort -n -r | head -n 40
+
+  remove-image-with-all-tags:
+    - task: remove-image-with-all-tags
+      cmd:
+        # Remove Core Models Image
+        - docker image remove ${docker-core-models-image-path}:${var.version}
+        - docker image remove ${docker-core-models-image-path}:${var.version-prefix}-latest
+        - docker image remove ${docker-core-models-image-path}:latest
+        # Remove Base Models Image
+        - docker image remove ${docker-base-models-image-path}:${var.version}
+        - docker image remove ${docker-base-models-image-path}:${var.version-prefix}-latest
+        - docker image remove ${docker-base-models-image-path}:latest
+        # Remove Services Models Image
+        - docker image remove ${docker-service-models-image-path}:${var.version}
+        - docker image remove ${docker-service-models-image-path}:${var.version-prefix}-latest
+        - docker image remove ${docker-service-models-image-path}:latest
+        # Remove NRM Models Image
+        - docker image remove ${docker-nrm-models-image-path}:${var.version}
+        - docker image remove ${docker-nrm-models-image-path}:${var.version-prefix}-latest
+        - docker image remove ${docker-nrm-models-image-path}:latest
+        # Remove Post-Install Models Image
+        - docker image remove ${docker-post-install-models-image-path}:${var.version}
+        - docker image remove ${docker-post-install-models-image-path}:${var.version-prefix}-latest
+        - docker image remove ${docker-post-install-models-image-path}:latest
+
+  generate-output-parameters:
+    - task: generate-output-parameters
+      docker-image: adp-release-auto
+      cmd:
+        # Generate Output Parameters Core
+        - generate-adp-artifacts
+          --image-only true
+          --image-repo ${release-image-repo-url} --image-name ${core-models-image-name} --image-version ${var.version}
+        # Generate Output Parameters Base
+        - generate-adp-artifacts
+          --image-only true
+          --image-repo ${release-image-repo-url} --image-name ${base-models-image-name} --image-version ${var.version}
+        # Generate Output Parameters Service
+        - generate-adp-artifacts
+          --image-only true
+          --image-repo ${release-image-repo-url} --image-name ${service-models-name} --image-version ${var.version}
+        # Generate Output Parameters NRM
+        - generate-adp-artifacts
+          --image-only true
+          --image-repo ${release-image-repo-url} --image-name ${nrm-models-name} --image-version ${var.version}
+        # Generate Output Parameters Post-Install
+        - generate-adp-artifacts
+          --image-only true
+          --image-repo ${release-image-repo-url} --image-name ${post-install-models-name} --image-version ${var.version}
+
+  push-image-with-all-tags:
+    - task: push-image-with-all-tags
+      cmd:
+        # Push Core Models Image
+        - docker image push ${docker-core-models-image-path}:${var.version}
+        - docker image push ${docker-core-models-image-path}:${var.version-prefix}-latest
+        - docker image push ${docker-core-models-image-path}:latest
+        # Push Base Models Image
+        - docker image push ${docker-base-models-image-path}:${var.version}
+        - docker image push ${docker-base-models-image-path}:${var.version-prefix}-latest
+        - docker image push ${docker-base-models-image-path}:latest
+        # Push Service Models Image
+        - docker image push ${docker-service-models-image-path}:${var.version}
+        - docker image push ${docker-service-models-image-path}:${var.version-prefix}-latest
+        - docker image push ${docker-service-models-image-path}:latest
+        # Push NRM Models Image
+        - docker image push ${docker-nrm-models-image-path}:${var.version}
+        - docker image push ${docker-nrm-models-image-path}:${var.version-prefix}-latest
+        - docker image push ${docker-nrm-models-image-path}:latest
+        # Push Post-Install Models Image
+        - docker image push ${docker-post-install-models-image-path}:${var.version}
+        - docker image push ${docker-post-install-models-image-path}:${var.version-prefix}-latest
+        - docker image push ${docker-post-install-models-image-path}:latest
+
+  create-git-tag:
+    - task: create-git-tag
+      docker-image: adp-release-auto
+      docker-flags:
+        - "--env GIT_COMMITTER_NAME='${env.GIT_COMMITTER_NAME}'"
+        - "--env GIT_COMMITTER_EMAIL='${env.GIT_COMMITTER_EMAIL}'"
+      cmd: git tag --annotate ${var.version} --message "Build Version ${var.version} by ${env.AUTHOR_NAME} <${env.AUTHOR_EMAIL}>"
+
+  remove-git-tag:
+    - task: remove-git-tag
+      docker-image: adp-release-auto
+      cmd: git tag --delete ${var.version}
+
+ # Enable Point Fix Solution
+  build-image:
+    - task: build-docker-image
+      cmd:
+        # Build Models Core image
+        - docker image build . --file=${models-core-dockerfile-path}
+          --build-arg GIT_COMMIT=${var.commit-hash} --build-arg BUILD_DATE=${env.BUILD_DATE}
+          --build-arg IMAGE_BUILD_VERSION=${var.version} --build-arg RSTATE=${var.rstate}
+          --build-arg ISO_VERSION=${env.ISO_VERSION} --build-arg CXC=${models-core-image-cxc}
+          --tag ${docker-internal-core-models-image-path}:${var.version}
+
+        # Build Models Base image
+        - docker image build . --file=${models-base-dockerfile-path}
+          --build-arg ERIC_ENM_MODELS_CORE_IMAGE_REPO=${internal-image-repo}
+          --build-arg GIT_COMMIT=${var.commit-hash} --build-arg BUILD_DATE=${env.BUILD_DATE}
+          --build-arg IMAGE_BUILD_VERSION=${var.version} --build-arg RSTATE=${var.rstate}
+          --build-arg ISO_VERSION=${env.ISO_VERSION} --build-arg CXC=${models-base-image-cxc}
+          --tag ${docker-internal-base-models-image-path}:${var.version}
+
+        # Build Service Models Image
+        - docker image build . --file=${models-generic-dockerfile-path}
+          --build-arg ERIC_ENM_MODELS_IMAGE_REPO=${internal-image-repo}
+          --build-arg models_type=service_models --build-arg models_dir=install
+          --build-arg model_deploy_file=docker/oss_model_images/services.json
+          --build-arg GIT_COMMIT=${var.commit-hash} --build-arg BUILD_DATE=${env.BUILD_DATE}
+          --build-arg IMAGE_BUILD_VERSION=${var.version} --build-arg RSTATE=${var.rstate}
+          --build-arg ISO_VERSION=${env.ISO_VERSION} --build-arg CXC=${models-service-image-cxc}
+          --tag ${docker-internal-service-models-image-path}:${var.version}
+
+        # Build NRM Models Image
+        - docker image build . --file=${models-generic-dockerfile-path}
+          --build-arg ERIC_ENM_MODELS_IMAGE_REPO=${internal-image-repo}
+          --build-arg models_type=nrm_models --build-arg models_dir=install
+          --build-arg model_deploy_file=docker/oss_model_images/nrms.json
+          --build-arg GIT_COMMIT=${var.commit-hash} --build-arg BUILD_DATE=${env.BUILD_DATE}
+          --build-arg IMAGE_BUILD_VERSION=${var.version} --build-arg RSTATE=${var.rstate}
+          --build-arg ISO_VERSION=${env.ISO_VERSION} --build-arg CXC=${models-nrm-image-cxc}
+          --tag ${docker-internal-nrm-models-image-path}:${var.version}
+
+        # Build Post-Install Models Image
+        - docker image build . --file=${models-generic-dockerfile-path}
+          --build-arg ERIC_ENM_MODELS_IMAGE_REPO=${internal-image-repo}
+          --build-arg models_type=post_install --build-arg models_dir=post_install
+          --build-arg model_deploy_file=docker/oss_model_images/post-install.json
+          --build-arg GIT_COMMIT=${var.commit-hash} --build-arg BUILD_DATE=${env.BUILD_DATE}
+          --build-arg IMAGE_BUILD_VERSION=${var.version} --build-arg RSTATE=${var.rstate}
+          --build-arg ISO_VERSION=${env.ISO_VERSION} --build-arg CXC=${models-post-install-image-cxc}
+          --tag ${docker-internal-post-install-models-image-path}:${var.version}
+
+  remove-image:
+    - task: remove-docker-image
+      cmd:
+        - docker image remove ${docker-core-models-image-path}:${var.version}
+        - docker image remove ${docker-base-models-image-path}:${var.version}
+        - docker image remove ${docker-service-models-image-path}:${var.version}
+        - docker image remove ${docker-nrm-models-image-path}:${var.version}
+        - docker image remove ${docker-post-install-models-image-path}:${var.version}
+
+  push-image:
+    - task: push-docker-image
+      cmd:
+        - docker image push ${docker-core-models-image-path}:${var.version}
+        - docker image push ${docker-base-models-image-path}:${var.version}
+        - docker image push ${docker-service-models-image-path}:${var.version}
+        - docker image push ${docker-nrm-models-image-path}:${var.version}
+        - docker image push ${docker-post-install-models-image-path}:${var.version}
+
+# VA Scan rules, image-path-to-scan defaults to PCR image
+  trivy-inline-scan:
+    - task: create-dir
+      cmd:
+      - mkdir -p ${build-dir}/trivy-reports
+
+    - task: trivy-inline-scan-core
+      docker-image: trivy-inline-scan
+      docker-in-docker: socket
+      cmd: --format json --output ${build-dir}/trivy-reports/trivy-report-core.json ${image-path-to-scan}/eric-enm-models-core-image:${image-version-to-scan}
+
+    - task: trivy-inline-scan-base
+      docker-image: trivy-inline-scan
+      docker-in-docker: socket
+      cmd: --format json --output ${build-dir}/trivy-reports/trivy-report-base.json ${image-path-to-scan}/eric-enm-models-base-image:${image-version-to-scan}
+
+    - task: trivy-inline-scan-services
+      docker-image: trivy-inline-scan
+      docker-in-docker: socket
+      cmd: --format json --output ${build-dir}/trivy-reports/trivy-report-services.json ${image-path-to-scan}/eric-enm-models-service:${image-version-to-scan}
+
+    - task: trivy-inline-scan-nrms
+      docker-image: trivy-inline-scan
+      docker-in-docker: socket
+      cmd: --format json --output ${build-dir}/trivy-reports/trivy-report-nrms.json ${image-path-to-scan}/eric-enm-models-nrm:${image-version-to-scan}
+
+    - task: trivy-inline-scan-post-models
+      docker-image: trivy-inline-scan
+      docker-in-docker: socket
+      cmd: --format json --output ${build-dir}/trivy-reports/trivy-report-post-models.json ${image-path-to-scan}/eric-enm-models-post-install:${image-version-to-scan}
+
+  grype-scan:
+    - task: grype-scan
+      docker-image: grype-scan
+      docker-in-docker: socket
+      cmd: grype_scan
+               --image ${image-path-to-scan}/eric-enm-models-core-image:${image-version-to-scan}
+               --image ${image-path-to-scan}/eric-enm-models-base-image:${image-version-to-scan}
+               --image ${image-path-to-scan}/eric-enm-models-service:${image-version-to-scan}
+               --image ${image-path-to-scan}/eric-enm-models-nrm:${image-version-to-scan}
+               --image ${image-path-to-scan}/eric-enm-models-post-install:${image-version-to-scan}
+               --report-dir ${build-dir}/grype-reports
+
+  hadolint-scan:
+    - task: hadolint-scan-test
+      docker-image: hadolint-scan
+      docker-flags:
+        - "--workdir /app/"
+        - "-v ${env.PWD}/ci_config/hadolint_config.yaml:/hadolint_config.yaml"
+        - "-v ${env.PWD}/docker/Dockerfile-Core:/Dockerfile-Core"
+        - "-v ${env.PWD}/docker/Dockerfile-Models-Base:/Dockerfile-Models-Base"
+        - "-v ${env.PWD}/docker/oss_model_images/Dockerfile-Models-Generic:/Dockerfile-Models-Generic"
+        - "-v ${env.PWD}/${build-dir}/hadolint-reports:/tmp/reports/"
+      cmd: "-p eric-enm-models -pc ENM/LooneyTunes -f /Dockerfile-Core /Dockerfile-Models-Base /Dockerfile-Models-Generic -c /hadolint_config.yaml"
+
+  generate-VA-report-V2:
+    - task: generate-VA-report-V2
+      docker-image: adp-release-auto
+      cmd: bash -c 'va-report
+        --config ${env.PWD}/ci_config/va_report.config
+        --md --debug
+        --output ${env.PWD}/${build-dir}/models_vulnerability_report.md
+        --set version=${var.version}
+        --hadolint-reports ${build-dir}/hadolint-reports
+        --trivy-reports ${build-dir}/trivy-reports
+        --anchore-reports ${build-dir}/grype-reports || true'
+
+    - task: markdown-to-pdf
+      docker-image: adp-release-auto
+      cmd: 'doc-handler generate --config ci_config/documentation_in_markdown.yaml
+                                 --output ./${build-dir}/combined-report/
+                                 --format pdf
+                                 --stylesheet /usr/share/marketplace/resources/pdf_style.css'
+
+  # Local aggregate scan, overrides image-path-to-scan to local image
+  va-scans:
+    - rule: clean
+    - rule: build-local-image
+    - rule: hadolint-scan
+    - rule: trivy-inline-scan
+      properties:
+        - image-path-to-scan: ${release-image-repo}
+        - image-version-to-scan: local
+    - rule: grype-scan
+      properties:
+        - image-path-to-scan: ${release-image-repo}
+        - image-version-to-scan: local
+    - rule: generate-VA-report-V2

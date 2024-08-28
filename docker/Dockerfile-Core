@@ -1,0 +1,32 @@
+ARG ERIC_ENM_SLES_BASE_IMAGE_NAME=eric-enm-sles-base
+ARG ERIC_ENM_SLES_BASE_IMAGE_REPO=armdocker.rnd.ericsson.se/proj-enm
+ARG ERIC_ENM_SLES_BASE_IMAGE_TAG=1.64.0-35
+
+FROM ${ERIC_ENM_SLES_BASE_IMAGE_REPO}/${ERIC_ENM_SLES_BASE_IMAGE_NAME}:${ERIC_ENM_SLES_BASE_IMAGE_TAG}
+
+ARG BUILD_DATE=unspecified
+ARG IMAGE_BUILD_VERSION=unspecified
+ARG GIT_COMMIT=unspecified
+ARG ISO_VERSION=unspecified
+ARG RSTATE=unspecified
+ARG CXC=unspecified
+
+LABEL \
+com.ericsson.product-number=$CXC \
+com.ericsson.product-revision=$RSTATE \
+enm_iso_version=$ISO_VERSION \
+org.label-schema.name="ENM Models Group" \
+org.label-schema.build-date=$BUILD_DATE \
+org.label-schema.vcs-ref=$GIT_COMMIT \
+org.label-schema.vendor="Ericsson" \
+org.label-schema.version=$IMAGE_BUILD_VERSION \
+org.label-schema.schema-version="1.0.0-rc1"
+
+COPY scripts/deploy_rpms.sh /usr/bin/
+
+RUN /usr/sbin/groupadd mdt && \
+    /usr/sbin/useradd -d /home/mdtuser -G mdt -u 304 mdtuser && \
+    zypper in -y ERICmodeldeploymentclient_CXP9031863 && \
+    chmod 555 /usr/bin/deploy_rpms.sh
+
+ENTRYPOINT ["deploy_rpms.sh"]

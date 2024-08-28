@@ -1,0 +1,4 @@
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = "-v -s --durations 7 --cov src --cov-report html --cov-fail-under 80"
+testpaths = ["tests/"]

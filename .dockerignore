@@ -1,0 +1,7 @@
+# Exclude Everything
+**
+
+# Then allow certain files and directories for context
+!/src/
+!/docker/
+!/scripts/

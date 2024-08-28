@@ -1,0 +1,54 @@
+ARG ERIC_ENM_MODELS_CORE_IMAGE_NAME=eric-enm-models-core-image
+ARG ERIC_ENM_MODELS_CORE_IMAGE_REPO=armdocker.rnd.ericsson.se/proj-enm
+ARG LATEST_ERIC_ENM_MODELS_CORE_IMAGE_TAG=latest
+
+FROM ${ERIC_ENM_MODELS_CORE_IMAGE_REPO}/${ERIC_ENM_MODELS_CORE_IMAGE_NAME}:${LATEST_ERIC_ENM_MODELS_CORE_IMAGE_TAG}
+
+ARG BUILD_DATE=unspecified
+ARG IMAGE_BUILD_VERSION=unspecified
+ARG GIT_COMMIT=unspecified
+ARG ISO_VERSION=unspecified
+ARG RSTATE=unspecified
+ARG CXC=unspecified
+
+LABEL \
+com.ericsson.product-number=$CXC \
+com.ericsson.product-revision=$RSTATE \
+enm_iso_version=$ISO_VERSION \
+org.label-schema.name="ENM Models Group" \
+org.label-schema.build-date=$BUILD_DATE \
+org.label-schema.vcs-ref=$GIT_COMMIT \
+org.label-schema.vendor="Ericsson" \
+org.label-schema.version=$IMAGE_BUILD_VERSION \
+org.label-schema.schema-version="1.0.0-rc1"
+
+
+RUN mkdir /etc/opt/ericsson/models && \
+    chmod 775 /etc/opt/ericsson/models && \
+    rm /usr/bin/deploy_rpms.sh
+
+COPY src/ /usr/bin/
+
+RUN chmod 555 /usr/bin/model_installer.py \
+    /usr/bin/create_model_layout.py \
+    /usr/bin/trigger_mdt.py \
+    /usr/bin/download_rpms.py \
+    /usr/bin/command_executor.py
+
+RUN zypper in -y ERICenmdeploymenttemplates_CXP9031758 && \
+    download_rpms.py && \
+    zypper rm -y ERICenmdeploymenttemplates_CXP9031758
+
+### Instructions run during any build that uses this image as a parent
+ONBUILD ARG models_dir
+ONBUILD ARG models_type
+ONBUILD ARG model_deploy_file="image_content/model_rpms/model-deploy.json"
+ONBUILD ENV MODELS_TYPE ${models_type}
+
+ONBUILD COPY ${model_deploy_file} model-deploy.json
+ONBUILD RUN model_installer.py model-deploy.json && \
+    create_model_layout.py /var/opt/ericsson/ERICmodeldeployment/data/${models_dir}/ && \
+    zypper clean --all
+
+### ENTRYPOINT used for any container that uses this image as a parent
+ENTRYPOINT ["trigger_mdt.py"]

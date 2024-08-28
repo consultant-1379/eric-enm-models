@@ -1,0 +1,30 @@
+# IDE Directories Files
+*.idea
+*.iml
+
+# Linting Logs
+dockerfilelint.log
+scriptinglint.log
+
+# BOB Files
+*bob-build-root*
+
+# Design Rule check logs
+design-rule-check-report*
+
+# Test Helm Chart Tar Files
+*.tar.gz
+*.tgz
+
+# Python generated files
+*pytest_cache*
+*pycache*
+htmlcov/
+*.coverage
+pkg
+tmp-pkg
+
+# VA scan build files
+build/
+requests.sqlite
+trivy_metadata.properties

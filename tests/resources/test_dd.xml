@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<litp:root xmlns:litp="http://www.ericsson.com/litp" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.ericsson.com/litp litp--schema/litp.xsd" id="root">
+  <litp:software id="software">
+    <litp:software-items-collection id="items">
+      <litp:package-list id="model_package">
+        <name>models</name>
+        <litp:package-list-packages-collection id="packages">
+          <litp:model-package id="nodemodelcommon">
+            <name>ERICnodemodelcommonrpm_CX1234567</name>
+          </litp:model-package>
+          <litp:model-package id="nodemodel">
+            <name>ERICnodemodelrpm_CX1234567</name>
+          </litp:model-package>
+          <litp:model-package id="post_install">
+            <name>ERICpostinstallrpm_CX1234567</name>
+          </litp:model-package>
+          <litp:model-package id="service_model">
+            <name>ERICservicemodelrpm_CX1234567</name>
+          </litp:model-package>
+        </litp:package-list-packages-collection>
+      </litp:package-list>
+    </litp:software-items-collection>
+  </litp:software>
+</litp:root>

@@ -1,0 +1,5 @@
+{
+    "deploy": {
+        "model-category": "nrm_models"
+    }
+}

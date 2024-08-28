@@ -1,0 +1,5 @@
+{
+    "deploy": {
+        "rpms": ["ERICnodemodelcommonrpm_CX1234567", "ERICservicemodelrpm_CX1234567"]
+    }
+}

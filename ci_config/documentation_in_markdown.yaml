@@ -1,0 +1,4 @@
+documents:
+  - name: models_vulnerability_report
+    files:
+      - ../build/models_vulnerability_report.md
